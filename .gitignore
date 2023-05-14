@@ -130,3 +130,9 @@ dmypy.json
 
 # sqlite db file
 sql_app.db
+
+# silly config file
+config.py
+
+# vim swapfile
+*.swp
