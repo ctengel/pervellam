@@ -77,7 +77,7 @@ def joblist(filt: str = None, db: Session = Depends(get_db)) -> list[Job]:
     if filt == 'unassigned':
         return db.query(JobTable).filter(JobTable.status == 'new').all()
     if filt == 'active':
-        return db.query(JobTable).filter(JobTable.status not in ['ended', 'stopped']).all()
+        return db.query(JobTable).filter(~JobTable.status.in_(['ended', 'stopped'])).all()
     return db.query(JobTable).all()
 
 @app.get('/jobs/{job_id}')
