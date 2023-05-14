@@ -16,12 +16,25 @@ class Pervellam:
         return None
     def assign_job(self):
         """Find and assign a job"""
-        jobs = self.req('jobs/', params={'filt': 'unassigned'})
+        jobs = self.list_jobs('unassigned')
         if not jobs:
             return None
         myjob = Job(self, jobs[0]["id"])
         myjob.assign(self.myname)
         return myjob
+    def new_job(self, url):
+        """Submit a new job"""
+        return Job(self, self.req('jobs/', 'POST', json={"url": url})["id"])
+    def get_job(self, job_id):
+        """Return existing job object"""
+        return Job(self, job_id)
+    def list_jobs(self, filt='active'):
+        """List some or all jobs"""
+        # TODO use objects?
+        params = None
+        if filt:
+            params={'filt': filt}
+        return self.req('jobs/', params=params)
 
 
 
@@ -39,3 +52,5 @@ class Job:
         return self.pervellam.req(f"jobs/{self.job_id}")
     def update(self, info):
         return self.pervellam.req(f"jobs/{self.job_id}", 'PATCH', json=info)
+    def stop(self):
+        self.pervellam.req(f"jobs/{self.job_id}/stop", 'POST', decode=False)

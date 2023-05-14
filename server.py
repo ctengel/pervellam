@@ -118,7 +118,7 @@ def stop(job_id:int, db: Session = Depends(get_db)) -> None:
         db.commit()
         db.refresh(db_job)
         return
-    if db_job.status not in ['assigned', 'active']:
+    if db_job.status not in ['assigned', 'running']:
         raise HTTPException(status_code=409, detail="Cannot be stopped")
     db_job.status = 'stopreq'
     db.commit()

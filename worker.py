@@ -36,7 +36,7 @@ def run_one(server, dler):
     # TODO add fname
     myj.update({'started': datetime.datetime.now().isoformat(),
                 'updated': datetime.datetime.now().isoformat(),
-                'status': 'active'})
+                'status': 'running'})
     while True:
         time.sleep(60)
         if myj.get()["status"] == "stopreq":
