@@ -8,7 +8,7 @@ import pervellam_client
 def disp_status(svr):
     """Display status of active jobs"""
     for job in svr.list_jobs():
-        print(f"{job['id']}\t{job['status']}\t{job['url']}")
+        print(f"{job['id']}\t{job['status']}\t{job['dler']}\t{job['url']}")
 
 def input_act(svr):
     """Ask user for a choice to stop or start a job"""
