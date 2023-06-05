@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Pervellam</title>
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+  <script>
+    // Generate HTML table from JSON response
+    function generateTable(jsonResponse) {
+      var tableContainer = document.getElementById('tableContainer');
+//clear existing table
+while (tableContainer.firstChild) {
+  tableContainer.removeChild(tableContainer.firstChild);
+}
+      var table = document.createElement('table');
+      var thead = document.createElement('thead');
+      var tbody = document.createElement('tbody');
+      var headerRow = document.createElement('tr');
+
+      // Create table header
+      for (var key in jsonResponse[0]) {
+        var th = document.createElement('th');
+        th.textContent = key;
+        headerRow.appendChild(th);
+      }
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Create table rows
+      jsonResponse.forEach(function (obj) {
+        var row = document.createElement('tr');
+        for (var prop in obj) {
+          var td = document.createElement('td');
+          td.textContent = obj[prop];
+          row.appendChild(td);
+        }
+        tbody.appendChild(row);
+      });
+
+      table.appendChild(tbody);
+      tableContainer.appendChild(table);
+    }
+    function postData(event) {
+      event.preventDefault();
+
+      // Get form data
+      var url = document.getElementById('url').value;
+
+      // Create payload
+      var payload = {
+        url: url
+      };
+
+      // Make POST request to API
+      fetch('/jobs/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(function(response) {
+        if (response.ok) {
+          console.log('Data posted successfully!');
+          // Handle success response here
+	  getApiData()
+        } else {
+          console.log('Error:', response.status);
+          // Handle error response here
+        }
+      })
+      .catch(function(error) {
+        console.log('Error:', error);
+        // Handle network error here
+      });
+    }
+    function getApiData() {
+// Make GET request to API
+fetch('/jobs/?filt=active', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+.then(function(response) {
+  if (response.ok) {
+    return response.json();
+  } else {
+    throw new Error('Error: ' + response.status);
+  }
+})
+.then(function(data) {
+  // Handle the retrieved data
+  console.log(data);
+  // Process the data or update the UI here
+  generateTable(data)
+})
+.catch(function(error) {
+  console.log('Error:', error.message);
+  // Handle network or API error here
+});
+}	    
+  </script>
+</head>
+<body onload="getApiData()">
+  <div id="tableContainer"></div>
+  <div>
+  <form id="postForm" onsubmit="postData(event)">
+    <label for="url">URL:</label>
+    <input type="text" id="url" name="url" required><br><br>
+    <input type="submit" value="Submit">
+  </form>
+  </script>
+</body>
+</html>
+

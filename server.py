@@ -3,6 +3,7 @@
 import datetime
 #from typing import Annotated
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.staticfiles import StaticFiles
 #from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Integer, DateTime
@@ -47,6 +48,8 @@ def get_db():
 
 
 app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 #import flask
 #import flask_sqlalchemy
