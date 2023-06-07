@@ -37,6 +37,10 @@ class Dler(BaseModel):
     """Simple model temporarily for assign"""
     dler: str
 
+class StopForce(BaseModel):
+    """Simple model for stop"""
+    force: bool = False
+
 def get_db():
     """Get a db connection"""
     db = SessionLocal()
@@ -113,8 +117,12 @@ def assign(job_id: int, dler: Dler, db: Session = Depends(get_db)) -> None:
     db.refresh(db_job)
 
 @app.post('/jobs/{job_id}/stop', status_code=204)
-def stop(job_id:int, db: Session = Depends(get_db)) -> None:
+def stop(job_id:int, force: StopForce = None, db: Session = Depends(get_db)) -> None:
     """Request that a job be stopped before it has ended"""
+    if force and force.force:
+        force = True
+    else:
+        force = False
     db_job = db.query(JobTable).get(job_id)
     if db_job.status == 'new':
         db_job.status = 'stopped'
@@ -122,7 +130,13 @@ def stop(job_id:int, db: Session = Depends(get_db)) -> None:
         db.refresh(db_job)
         return
     if db_job.status not in ['assigned', 'running']:
-        raise HTTPException(status_code=409, detail="Cannot be stopped")
+        if force:
+            db_job.status = 'stopped'
+            db.commit()
+            db.refresh(db_job)
+            return
+        else:
+            raise HTTPException(status_code=409, detail="Cannot be stopped")
     db_job.status = 'stopreq'
     db.commit()
     db.refresh(db_job)
