@@ -33,10 +33,16 @@ while (tableContainer.firstChild) {
 
       // Create table header
       for (var key in jsonResponse[0]) {
+	if (key == 'fname' || key == 'id') {
+		continue
+	}
         var th = document.createElement('th');
         th.textContent = key;
         headerRow.appendChild(th);
       }
+      var thx = document.createElement('th');
+      thx.textContent = 'stop';
+      headerRow.appendChild(thx)
       thead.appendChild(headerRow);
       table.appendChild(thead);
 
@@ -44,10 +50,33 @@ while (tableContainer.firstChild) {
       jsonResponse.forEach(function (obj) {
         var row = document.createElement('tr');
         for (var prop in obj) {
+	  if (prop == 'fname' || prop == 'id') {
+		  continue
+	  }
           var td = document.createElement('td');
-          td.textContent = obj[prop];
+	  if (prop == 'url') {
+		  var urla = document.createElement('a');
+		  urla.href = obj['url']
+		  urla.textContent = obj['url'].substring(obj['url'].lastIndexOf('/') + 1);
+		  td.appendChild(urla);
+          } else {
+          	td.textContent = obj[prop];
+	  }
           row.appendChild(td);
         }
+	var tdx = document.createElement('td');
+	var formx = document.createElement('form');
+	var subx = document.createElement('input');
+        formx.onsubmit = function (event) {
+	      event.preventDefault();
+	      stopJob(obj['id']);
+	      console.log("Form submitted");
+        }
+	subx.type = 'submit';
+	subx.value = 'Stop';
+	formx.appendChild(subx);
+	tdx.appendChild(formx);
+	row.appendChild(tdx);
         tbody.appendChild(row);
       });
 
@@ -113,7 +142,28 @@ fetch('/jobs/?filt=active', {
   console.log('Error:', error.message);
   // Handle network or API error here
 });
-}	    
+}
+   function stopJob(job_id) {
+
+      // Make POST request to API
+      fetch('/jobs/' + job_id + '/stop', {
+        method: 'POST'
+      })
+      .then(function(response) {
+        if (response.ok) {
+          console.log('Data posted successfully!');
+          // Handle success response here
+	  getApiData()
+        } else {
+          console.log('Error:', response.status);
+          // Handle error response here
+        }
+      })
+      .catch(function(error) {
+        console.log('Error:', error);
+        // Handle network error here
+      });
+    }
   </script>
 </head>
 <body onload="getApiData()">
