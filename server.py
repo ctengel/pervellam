@@ -1,7 +1,7 @@
 """Pervallam SQL API"""
 
 import datetime
-#from typing import Annotated
+from typing import Union  # Annotated
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 #from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -23,13 +23,14 @@ Base = declarative_base()
 
 class Job(BaseModel):
     """A job"""
-    id: int | None = None  # TODO ensure API always returns this
-    url: str | None = None  # TODO ensure it has this on inital POST
-    dler: str | None = None
-    fname: str | None = None
-    status: str | None = None
-    started: datetime.datetime | None = None
-    updated: datetime.datetime | None = None
+    # NOTE - following syntax is needed to support Python 3.9
+    id: Union[int, None] = None  # TODO ensure API always returns this
+    url: Union[str, None] = None  # TODO ensure it has this on inital POST
+    dler: Union[str, None] = None
+    fname: Union[str, None] = None
+    status: Union[str, None] = None
+    started: Union[datetime.datetime, None] = None
+    updated: Union[datetime.datetime, None] = None
     class Config:
         """Needed for fastapi<->sqlalchemy?"""
         orm_mode = True
