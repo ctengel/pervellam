@@ -31,6 +31,7 @@ class Job(BaseModel):
     started: datetime.datetime | None = None
     updated: datetime.datetime | None = None
     class Config:
+        """Needed for fastapi<->sqlalchemy?"""
         orm_mode = True
 
 class Dler(BaseModel):
@@ -117,12 +118,9 @@ def assign(job_id: int, dler: Dler, db: Session = Depends(get_db)) -> None:
     db.refresh(db_job)
 
 @app.post('/jobs/{job_id}/stop', status_code=204)
-def stop(job_id:int, force: StopForce = None, db: Session = Depends(get_db)) -> None:
+def stop(job_id:int, stop_payload: StopForce = None, db: Session = Depends(get_db)) -> None:
     """Request that a job be stopped before it has ended"""
-    if force and force.force:
-        force = True
-    else:
-        force = False
+    force = bool(stop_payload and stop_payload.force)
     db_job = db.query(JobTable).get(job_id)
     if db_job.status == 'new':
         db_job.status = 'stopped'
@@ -135,8 +133,7 @@ def stop(job_id:int, force: StopForce = None, db: Session = Depends(get_db)) -> 
             db.commit()
             db.refresh(db_job)
             return
-        else:
-            raise HTTPException(status_code=409, detail="Cannot be stopped")
+        raise HTTPException(status_code=409, detail="Cannot be stopped")
     db_job.status = 'stopreq'
     db.commit()
     db.refresh(db_job)

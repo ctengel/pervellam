@@ -6,6 +6,7 @@ import argparse
 import subprocess
 import datetime
 import time
+import warnings
 import pervellam_client
 import config
 
@@ -22,9 +23,9 @@ class DLPJob:
         self.subp.wait()
         self.close()
     def close(self):
+        """Clean up resources"""
         # TODO do we need this?
         #self.subp.close()
-        pass
 
 def run_one(server, dler):
     """Check for a new job, assign, run, wait to finish or stop"""
@@ -47,7 +48,14 @@ def run_one(server, dler):
             myd.close()
             myj.update({'status': 'ended'})
             return
-        myj.update({'updated': datetime.datetime.now().isoformat()})
+        try:
+            # TODO add size and/or actual file mtime
+            myj.update({'updated': datetime.datetime.now().isoformat()})
+        except pervellam_client.requests.exceptions.RequestException:
+            # NOTE this does not use the myj.update(retry=True) logic as above
+            #      because since this download is still healthy better to stay in normal loop
+            warnings.warn('Cannot update Pervellam server, will retry in a minute...')
+            continue
 
 
 def run_cli():

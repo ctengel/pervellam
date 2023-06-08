@@ -1,6 +1,10 @@
 """Object oriented Pervellam client library"""
 
+import time
 import requests
+
+RETRIES = 3
+RETRY_WAIT = 30
 
 class Pervellam:
     """Deal with a Pervallam server"""
@@ -44,13 +48,31 @@ class Job:
         self.pervellam = pervellam
         self.job_id = job_id
     def assign(self, assign_to):
+        """Assign this job to a worker"""
         self.pervellam.req(f"jobs/{self.job_id}/assign",
                            'POST',
                            json={"dler": assign_to},
                            decode=False)
     def get(self):
+        """Get current info on this job"""
         return self.pervellam.req(f"jobs/{self.job_id}")
-    def update(self, info):
-        return self.pervellam.req(f"jobs/{self.job_id}", 'PATCH', json=info)
+    def update(self, info, retry=False):
+        """Update this job, optionally retrying on error"""
+        retries = 1
+        # TODO consider using requests.adapters.Retry
+        if retry:
+            retries = RETRIES
+        while True:
+            try:
+                return self.pervellam.req(f"jobs/{self.job_id}", 'PATCH', json=info)
+            except requests.exceptions.RequestException as exception:
+                retries -= 1
+                if retries:
+                    time.sleep(RETRY_WAIT)
+                else:
+                    raise exception
+        assert False
     def stop(self):
+        """Stop this job"""
+        # TODO add force option
         self.pervellam.req(f"jobs/{self.job_id}/stop", 'POST', decode=False)
