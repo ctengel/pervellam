@@ -29,24 +29,33 @@ class DLPJob:
 
 def run_one(server, dler):
     """Check for a new job, assign, run, wait to finish or stop"""
+    print(f'Worker {dler} looking for jobs...')
     myp = pervellam_client.Pervellam(server, dler)
     myj = myp.assign_job()
     if not myj:
+        print('No jobs found')
         return
+    print(f'Assigned job {myj.job_id}; getting more details...')
     myd = DLPJob(myj.get()["url"])
+    print('Job commenced, doing initial update...')
     # TODO add fname
     myj.update({'started': datetime.datetime.now().isoformat(),
                 'updated': datetime.datetime.now().isoformat(),
-                'status': 'running'})
+                'status': 'running'},
+               retry=True)
+    print('Looping and waiting...')
     while True:
         time.sleep(60)
         if myj.get()["status"] == "stopreq":
+            print('Recieved stop request...')
             myd.stop()
-            myj.update({'status': 'stopped'})
+            print('Job stopped!')
+            myj.update({'status': 'stopped'}, retry=True)
             return
         if not myd.status():
+            print('Job stopped organically!')
             myd.close()
-            myj.update({'status': 'ended'})
+            myj.update({'status': 'ended'}, retry=True)
             return
         try:
             # TODO add size and/or actual file mtime
