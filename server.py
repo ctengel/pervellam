@@ -109,6 +109,7 @@ def newjob(job: Job, db: Session = Depends(get_db)) -> Job:
 #def assign(job_id: int, credentials: Annotated[HTTPBasicCredentials, Depends(security)], db: Session = Depends(get_db)) -> None:
 def assign(job_id: int, dler: Dler, db: Session = Depends(get_db)) -> None:
     """Assign a job to a worker"""
+    # TODO we need to probably implement some locking - in rare conditions it seems two can get started and think they own it
     db_job = db.query(JobTable).get(job_id)
     if db_job.status != 'new':
         raise HTTPException(status_code=409, detail="Cannot be assigned")

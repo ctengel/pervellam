@@ -36,15 +36,22 @@ def run_one(server, dler):
         print('No jobs found')
         return
     print(f'Assigned job {myj.job_id}; getting more details...')
-    myd = DLPJob(myj.get()["url"])
+    job_info = myj.get(retry=True)
+    assert job_info["dler"] == dler
+    myd = DLPJob(job_info["url"])
     print('Job commenced, doing initial update...')
     # TODO add fname
-    myj.update({'started': datetime.datetime.now().isoformat(),
-                'updated': datetime.datetime.now().isoformat(),
-                'status': 'running'},
-               retry=True)
+    job_info = myj.update({'started': datetime.datetime.now().isoformat(),
+                           'updated': datetime.datetime.now().isoformat(),
+                           'status': 'running'},
+                          retry=True)
     print('Looping and waiting...')
     while True:
+        if job_info["dler"] != dler:
+            warnings.warn('Conflict dectected, self destructing...')
+            myd.stop()
+            # TODO throw a better exception here
+            assert False
         time.sleep(60)
         if myj.get()["status"] == "stopreq":
             print('Recieved stop request...')
@@ -59,7 +66,7 @@ def run_one(server, dler):
             return
         try:
             # TODO add size and/or actual file mtime
-            myj.update({'updated': datetime.datetime.now().isoformat()})
+            job_info = myj.update({'updated': datetime.datetime.now().isoformat()})
         except pervellam_client.requests.exceptions.RequestException:
             # NOTE this does not use the myj.update(retry=True) logic as above
             #      because since this download is still healthy better to stay in normal loop
