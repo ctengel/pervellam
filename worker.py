@@ -53,7 +53,14 @@ def run_one(server, dler):
             # TODO throw a better exception here
             assert False
         time.sleep(60)
-        if myj.get()["status"] == "stopreq":
+        try:
+            pjs = myj.get()["status"]
+        except pervellam_client.requests.exceptions.RequestException:
+            # NOTE this does not use the myj.update(retry=True) logic as above
+            #      because since this download is still healthy better to stay in normal loop
+            warnings.warn('Cannot get status from Pervellam server, will retry in a minute...')
+            continue
+        if pjs == "stopreq":
             print('Recieved stop request...')
             myd.stop()
             print('Job stopped!')
