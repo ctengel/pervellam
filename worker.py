@@ -10,18 +10,29 @@ import warnings
 import pervellam_client
 import config
 
+WAIT_FOR_KILL = 200
+
 class DLPJob:
     """A yt-dlp job"""
     def __init__(self, url):
-        self.subp = subprocess.Popen([config.MYDLP, url])
+        self.subp = subprocess.Popen([config.MYDLP,
+                                      '--restrict-filenames',
+                                      '--write-info-json',
+                                      url])
     def status(self):
         """Return True if still running, False otherwise"""
         return bool(self.subp.poll() is None)
     def stop(self):
         """Ask dlp to stop"""
         self.subp.send_signal(2)
-        self.subp.wait()
-        self.close()
+        try:
+            self.subp.wait(WAIT_FOR_KILL)
+        except subprocess.TimeoutExpired:
+            warnings.warn('Kill request timeout; retrying...')
+            self.subp.send_signal(2)
+            self.subp.wait()
+        finally:
+            self.close()
     def close(self):
         """Clean up resources"""
         # TODO do we need this?
