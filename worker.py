@@ -189,7 +189,10 @@ def cdul_wrapper(server, dler, datadir, bucket):
     newpath.mkdir()
     os.chdir(newpath)
     file_info = run_one(dler, myj)
-    assert file_info['fname']
+    if not file_info['fname']:
+        warnings.warn('no file to upload')
+        os.chdir(cwd)
+        return
     info_json = None
     for pij in newpath.iterdir():
         if tuple(pij.suffixes) == ('.info', '.json'):
