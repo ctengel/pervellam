@@ -23,6 +23,7 @@ Base = declarative_base()
 
 class Job(BaseModel):
     """A job"""
+    # TODO add file size
     # NOTE - following syntax is needed to support Python 3.9
     id: Union[int, None] = None  # TODO ensure API always returns this
     url: Union[str, None] = None  # TODO ensure it has this on inital POST
