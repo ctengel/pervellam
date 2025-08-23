@@ -198,9 +198,10 @@ def cdul_wrapper(server, dler, datadir, bucket):
     info_json_data = read_info_json(info_json)
     ij_extension = info_json_data.get('ext')
     assert ij_extension
+    # TODO consider .withsuffix()
     base_file_name = pathlib.Path(str(info_json).removesuffix('.info.json'))
     assert base_file_name != info_json
-    media_file = base_file_name + "." + ij_extension
+    media_file = base_file_name.withsuffix(f".{ij_extension}")
     assert media_file == file_info['fname']
     oi_file = upload(get_objidx(), info_json_data, media_file, bucket, partial=True, library='TWCH')
     myj.update({'fname': oi_file.oio.url + '/files/' + oi_file.fil_uuid})
