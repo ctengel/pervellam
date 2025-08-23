@@ -147,6 +147,7 @@ def upload(objidx, metadata, filename, bucket, pretend=False, partial=False, lib
             person = metadata.get('creator')
         if partial:
             assert person
+            # TODO datetime.datetime.fromtimestamp(timestamp, datetime.UTC)
             starttime = datetime.datetime.utcfromtimestamp(metadata['timestamp']).isoformat()
             media = f'live-{person}-{starttime}-{metadata.get("id")}'
         else:
@@ -205,7 +206,7 @@ def cdul_wrapper(server, dler, datadir, bucket):
     assert media_file != info_json
     assert media_file.name == file_info['fname']
     oi_file = upload(get_objidx(), info_json_data, media_file, bucket, partial=True, library='TWCH')
-    myj.update({'fname': oi_file.oio.url + 'files/' + str(oi_file.uuid)})
+    myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid)})
     media_file.unlink()
     os.chdir(cwd)
 
