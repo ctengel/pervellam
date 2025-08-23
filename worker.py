@@ -198,7 +198,7 @@ def cdul_wrapper(server, dler, datadir, bucket):
     info_json_data = read_info_json(info_json)
     ij_extension = info_json_data.get('ext')
     assert ij_extension
-    base_file_name = info_json.removesuffix('.info.json')
+    base_file_name = pathlib.Path(str(info_json).removesuffix('.info.json'))
     assert base_file_name != info_json
     media_file = base_file_name + "." + ij_extension
     assert media_file == file_info['fname']
