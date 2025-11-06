@@ -9,12 +9,13 @@ import time
 import warnings
 import os
 import pathlib
-import json
-import obj_idx.client
+import obj_idx.dlp_lpm_meta as dlpmeta
+import obj_idx.client as oiclient
 import pervellam_client
 import config
 
 WAIT_FOR_KILL = 200
+LPM_LIB = 'TWCH'
 
 
 class DLPJob:
@@ -116,63 +117,6 @@ def run_one(dler, myj):
             warnings.warn('Cannot update Pervellam server, will retry in a minute...')
             continue
 
-def read_info_json(filename):
-    """Return data from a JSON file"""
-    with open(filename, encoding="utf-8") as user_file:
-        parsed_json = json.load(user_file)
-    return parsed_json
-
-def get_objidx():
-    """Get objidx from environment
-
-    (stolen from obj_idx.cli)"""
-    oi_url = os.environ['OBJIDX_URL']
-    oi_user = os.environ['OBJIDX_AUTH'].partition(':')[0]
-    objidx = obj_idx.client.get_obj_idx(oi_url, oi_user)
-    return objidx
-
-# TODO - next 3 functions steal alot from OI yt - merge back into OI lib
-
-def upload(objidx, metadata, filename, bucket, pretend=False, partial=False, library=None):
-    """Upload a given file based on JSON metadata"""
-    url = metadata.get('webpage_url')
-    if not (url and url.startswith('http')):
-        url = metadata.get('url')
-    assert url.startswith('http')
-    person = None
-    media = None
-    if library:
-        person = metadata.get('uploader')
-        if metadata.get('creator'):
-            person = metadata.get('creator')
-        if partial:
-            assert person
-            # TODO datetime.datetime.fromtimestamp(timestamp, datetime.UTC)
-            starttime = datetime.datetime.utcfromtimestamp(metadata['timestamp']).isoformat()
-            media = f'live-{person}-{starttime}-{metadata.get("id")}'
-        else:
-            if person:
-                media = f'vid-{person}-{metadata.get("id")}'
-            else:
-                media = metadata.get("id")
-    print(filename, url, person, media)
-    if pretend:
-        return None
-    flob = obj_idx.client.upload_metadata(filename,
-                                          objidx,
-                                          bucket=bucket,
-                                          url=url,
-                                          direct=False,
-                                          partial=partial,
-                                          ytdl_info=metadata,
-                                          library=library,
-                                          person=person,
-                                          media=media)
-    if not flob:
-        warnings.warn(f"Possible conflict for {filename}; upload failed")
-        return None
-    print(flob.uuid)
-    return flob
 
 def cdul_wrapper(server, dler, datadir, bucket):
     """Put in a specific directory and upload to OI"""
@@ -199,16 +143,12 @@ def cdul_wrapper(server, dler, datadir, bucket):
             info_json = pij
     assert info_json
     assert info_json.name != file_info['fname']
-    info_json_data = read_info_json(info_json)
-    ij_extension = info_json_data.get('ext')
-    assert ij_extension
-    # TODO consider .withsuffix()
-    base_file_name = pathlib.Path(str(info_json).removesuffix('.info.json'))
-    assert base_file_name != info_json
-    media_file = base_file_name.with_suffix(f".{ij_extension}")
+    info_json_data = dlpmeta.DLPMetaData(from_file=info_json, partial=True)
+    media_file = info_json_data.get_media_file()
     assert media_file != info_json
     assert media_file.name == file_info['fname']
-    oi_file = upload(get_objidx(), info_json_data, media_file, bucket, partial=True, library='TWCH')
+    info_json_data.add_lpm(LPM_LIB)
+    oi_file = info_json_data.upload(oiclient.get_obj_idx_env(), bucket)
     myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid)})
     media_file.unlink()
     os.chdir(cwd)
