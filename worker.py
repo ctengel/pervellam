@@ -64,7 +64,8 @@ class DLPJob:
         ourfile = files[0]
         return {'fname': ourfile[1],
                 'size': ourfile[0],
-                'updated': ourfile[2]}
+                'updated': datetime.datetime.fromtimestamp(ourfile[2],
+                                                           datetime.timezone.utc).isoformat()}
 
 
 def run_one(dler, myj):
@@ -74,8 +75,8 @@ def run_one(dler, myj):
     assert job_info["dler"] == dler
     myd = DLPJob(job_info["url"])
     print('Job commenced, doing initial update...')
-    job_info = myj.update({'started': datetime.datetime.now().isoformat(),
-                           'updated': datetime.datetime.now().isoformat(),
+    job_info = myj.update({'started': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                           'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                            'status': 'running'},
                           retry=True)
     print('Looping and waiting...')

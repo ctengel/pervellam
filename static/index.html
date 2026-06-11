@@ -67,13 +67,18 @@ while (tableContainer.firstChild) {
 	var tdx = document.createElement('td');
 	var formx = document.createElement('form');
 	var subx = document.createElement('input');
+	var stuck = obj['status'] == 'stopreq';
         formx.onsubmit = function (event) {
 	      event.preventDefault();
-	      stopJob(obj['id']);
+	      if (stuck) {
+		      forceStopJob(obj['id']);
+	      } else {
+		      stopJob(obj['id']);
+	      }
 	      console.log("Form submitted");
         }
 	subx.type = 'submit';
-	subx.value = 'Stop';
+	subx.value = stuck ? 'Force' : 'Stop';
 	formx.appendChild(subx);
 	tdx.appendChild(formx);
 	row.appendChild(tdx);
@@ -83,25 +88,24 @@ while (tableContainer.firstChild) {
       table.appendChild(tbody);
       tableContainer.appendChild(table);
     }
+    // Submit a new job for the given URL. Returns the fetch promise.
+    function createJob(url) {
+      return fetch('/jobs/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ url: url })
+      });
+    }
     function postData(event) {
       event.preventDefault();
 
       // Get form data
       var url = document.getElementById('url').value;
 
-      // Create payload
-      var payload = {
-        url: url
-      };
-
       // Make POST request to API
-      fetch('/jobs/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
+      createJob(url)
       .then(function(response) {
         if (response.ok) {
           console.log('Data posted successfully!');
@@ -115,6 +119,36 @@ while (tableContainer.firstChild) {
       .catch(function(error) {
         console.log('Error:', error);
         // Handle network error here
+      });
+    }
+    // Build the bookmarklet href, embedding this server's real origin so it
+    // works from any cross-origin page the user is browsing. The target URL is
+    // passed in the fragment so it never reaches the server (e.g. access logs).
+    function setupBookmarklet() {
+      var base = window.location.origin + window.location.pathname;
+      var code = "javascript:(function(){window.open('" + base +
+                 "#addurl='+encodeURIComponent(location.href));})();";
+      document.getElementById('bookmarklet').href = code;
+    }
+    // When opened with #addurl=..., auto-submit that URL as a new job.
+    function checkAutoSubmit() {
+      var addurl = new URLSearchParams(window.location.hash.slice(1)).get('addurl');
+      if (!addurl) {
+        return;
+      }
+      // Strip the fragment so a reload doesn't re-submit.
+      history.replaceState({}, '', window.location.pathname);
+      createJob(addurl)
+      .then(function(response) {
+        if (response.ok) {
+          console.log('Bookmarklet job created!');
+          getApiData()
+        } else {
+          console.log('Error:', response.status);
+        }
+      })
+      .catch(function(error) {
+        console.log('Error:', error);
       });
     }
     function getApiData() {
@@ -164,9 +198,34 @@ fetch('/jobs/?filt=active', {
         // Handle network error here
       });
     }
+   function forceStopJob(job_id) {
+
+      // Force-clear a stuck (stopreq) job to 'stopped'
+      fetch('/jobs/' + job_id + '/stop', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ force: true })
+      })
+      .then(function(response) {
+        if (response.ok) {
+          console.log('Data posted successfully!');
+          // Handle success response here
+	  getApiData()
+        } else {
+          console.log('Error:', response.status);
+          // Handle error response here
+        }
+      })
+      .catch(function(error) {
+        console.log('Error:', error);
+        // Handle network error here
+      });
+    }
   </script>
 </head>
-<body onload="getApiData()">
+<body onload="getApiData();setupBookmarklet();checkAutoSubmit()">
   <div id="tableContainer"></div>
   <div>
   <form id="postForm" onsubmit="postData(event)">
@@ -174,7 +233,11 @@ fetch('/jobs/?filt=active', {
     <input type="text" id="url" name="url" required><br><br>
     <input type="submit" value="Submit">
   </form>
-  </script>
+  </div>
+  <div>
+    <p>Drag this to your bookmarks bar to queue the page you're viewing:
+       <a id="bookmarklet" href="#">Pervellam</a></p>
+  </div>
 </body>
 </html>
 
