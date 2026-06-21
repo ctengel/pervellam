@@ -94,7 +94,9 @@ def run_one(dler, myj):
             #      because since this download is still healthy better to stay in normal loop
             warnings.warn('Cannot get status from Pervellam server, will retry in a minute...')
             continue
-        if pjs == "stopreq":
+        # 'stopped' here means a force-stop already flipped the status (issue #39);
+        # treat it like a stopreq so the still-running download is actually killed.
+        if pjs in ("stopreq", "stopped"):
             print('Recieved stop request...')
             myd.stop()
             print('Job stopped!')

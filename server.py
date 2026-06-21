@@ -5,7 +5,7 @@ from typing import Union  # Annotated
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 #from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import create_engine, Column, String, Integer, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -30,11 +30,10 @@ class Job(BaseModel):
     dler: Union[str, None] = None
     fname: Union[str, None] = None
     status: Union[str, None] = None
+    size: Union[int, None] = None
     started: Union[datetime.datetime, None] = None
     updated: Union[datetime.datetime, None] = None
-    class Config:
-        """Needed for fastapi<->sqlalchemy?"""
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)  # needed for fastapi<->sqlalchemy
 
 class Dler(BaseModel):
     """Simple model temporarily for assign"""
@@ -75,6 +74,7 @@ class JobTable(Base):
     dler = Column(String(16))
     fname = Column(String(64))
     status = Column(String(8), default='new')
+    size = Column(Integer)
     started = Column(DateTime)
     updated = Column(DateTime)
 
@@ -88,6 +88,12 @@ def joblist(filt: str = None, db: Session = Depends(get_db)) -> list[Job]:
         return db.query(JobTable).filter(JobTable.status == 'new').all()
     if filt == 'active':
         return db.query(JobTable).filter(~JobTable.status.in_(['ended', 'stopped'])).all()
+    if filt == 'finished':
+        return (db.query(JobTable)
+                .filter(JobTable.status.in_(['ended', 'stopped']))
+                .order_by(JobTable.updated.desc())
+                .limit(20)
+                .all())
     return db.query(JobTable).all()
 
 @app.get('/jobs/{job_id}')
