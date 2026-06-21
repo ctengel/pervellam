@@ -7,6 +7,7 @@ import random
 import tw
 import pervellam_client
 import config
+import stream_ml
 
 def read_prifile(prifile):
     """Read a simple priorities file"""
@@ -14,15 +15,12 @@ def read_prifile(prifile):
         priorities = file.read().splitlines()
     return priorities
 
-def prioritize(pvo, two, priorities, count=5):
-    """Given a Pervellam object and a Tw object, make sure our priorities are aligned"""
-    add = []
-    avail = [x['user_login'] for x in two.followed()]
-    for pri in priorities:
-        if pri in avail:
-            add.append(pri)
-            if len(add) == count:
-                break
+def reconcile(pvo, add, count=5, dry_run=False):
+    """Given a Pervellam object and an ordered list of desired live channels
+    (already capped at count), add the missing ones and stop the excess.
+
+    Shared by the priority-file (level 2) and ML (level 3) modes.
+    """
     print("Live:")
     for one in add:
         print(one)
@@ -35,7 +33,8 @@ def prioritize(pvo, two, priorities, count=5):
     print("Add:")
     for job in actual_add:
         print(job)
-        pvo.new_job(config.BASE_URL + job)
+        if not dry_run:
+            pvo.new_job(config.BASE_URL + job)
     total = len(running) + len(actual_add)
     print("Remove:")
     if total > count:
@@ -45,10 +44,34 @@ def prioritize(pvo, two, priorities, count=5):
             if job[1] in add:
                 continue
             print(job[1])
-            pvo.get_job(job[0]).stop()
+            if not dry_run:
+                pvo.get_job(job[0]).stop()
             removed = removed + 1
             if removed == remove:
                 break
+
+def prioritize(pvo, two, priorities, count=5, dry_run=False):
+    """Keep the top `count` live channels from the priority file running"""
+    add = []
+    avail = [x['user_login'] for x in two.followed()]
+    for pri in priorities:
+        if pri in avail:
+            add.append(pri)
+            if len(add) == count:
+                break
+    reconcile(pvo, add, count, dry_run)
+
+def ml_prioritize(pvo, two, count=5, dry_run=False):
+    """Keep the top `count` live channels as ranked by the trained model running"""
+    vectorizer, model = stream_ml.load_model(config.ML_MODEL)
+    scored = [(stream_ml.rank_score(vectorizer, model, stream), stream)
+              for stream in two.followed()]
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    print("Ranked:")
+    for score, stream in scored:
+        print(stream['user_login'], round(score, 3))
+    add = [stream['user_login'] for score, stream in scored[:count]]
+    reconcile(pvo, add, count, dry_run)
 
 def pri_naieve(pvo, priorities):
     running = [(x["id"], x["url"].split('/')[-1]) for x in pvo.list_jobs()]
@@ -67,34 +90,31 @@ def pri_naieve(pvo, priorities):
 
 
 
-def wrapper(srv, prifile, naieve=False):
+def wrapper(srv, prifile, naieve=False, ml=False, dry_run=False):
     """Setup needed objects and call actual prioritize()"""
-    priorities = read_prifile(prifile)
-    if not naieve:
-        # TODO gotta be a better way
-        two = tw.Tw(url=config.TW_URL,
-                    client_id=config.TW_CLI,
-                    app_access_token=config.TW_APT,
-                    #user_access_token=config.TW_UST,
-                    user_refresh_token=config.TW_URT,
-                    login=config.TW_USR,
-                    id_url=config.TW_IDU,
-                    client_secret=config.TW_CLS)
     pvo = pervellam_client.Pervellam(srv)
     if naieve:
-        pri_naieve(pvo, priorities)
+        pri_naieve(pvo, read_prifile(prifile))
+        return
+    two = tw.Tw.from_config(config)
+    if ml:
+        ml_prioritize(pvo, two, config.MAX, dry_run)
     else:
-        prioritize(pvo, two, priorities, config.MAX)
+        prioritize(pvo, two, read_prifile(prifile), config.MAX, dry_run)
 
 
 def run_cli():
     """Basic CLI"""
     parser = argparse.ArgumentParser(description='Pervellam prioritizer')
     parser.add_argument('server', help='Pervellam server URL')
-    parser.add_argument('prifile', help='Ordered priority file')
+    parser.add_argument('prifile', nargs='?', help='Ordered priority file (not used with --ml)')
     parser.add_argument('-n', '--naieve', action='store_true', help='do not actually check status, just try to add')
+    parser.add_argument('-m', '--ml', action='store_true', help='rank live streams with the trained model instead of a priority file')
+    parser.add_argument('--dry-run', action='store_true', help='print the add/stop plan without changing the server')
     args = parser.parse_args()
-    wrapper(args.server, args.prifile, args.naieve)
+    if not args.ml and not args.prifile:
+        parser.error('prifile is required unless --ml is given')
+    wrapper(args.server, args.prifile, args.naieve, args.ml, args.dry_run)
 
 if __name__ == '__main__':
     run_cli()

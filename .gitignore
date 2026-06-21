@@ -134,5 +134,8 @@ sql_app.db
 # silly config file
 config.py
 
+# ML snapshots, scores and trained model (prioritize.py level 3)
+ml_data/
+
 # vim swapfile
 *.swp

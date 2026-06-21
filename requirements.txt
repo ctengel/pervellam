@@ -1,0 +1,7 @@
+requests
+fastapi
+sqlalchemy
+# prioritize.py level 3 (ML) + stream_* tooling
+scikit-learn
+nltk
+joblib
