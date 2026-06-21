@@ -94,3 +94,38 @@ Needs in `config.py`:
   for the `streams/followed` scope (a localhost OAuth redirect works for the
   one-time user authorization). See `config.samp.py` for the full list and
   [OAUTH.md](OAUTH.md) for detailed instructions on how to obtain.
+
+### Level 3 — ML (`-m`)
+
+```
+./prioritize.py <server> --ml
+```
+
+Instead of a human-written priority file, this ranks the live followed streams
+with a model trained on **your own ratings** of past streams, then keeps the top
+`MAX` running (same add/stop reconciliation as level 2). Use `--dry-run` to print
+the ranked add/stop plan without touching the server.
+
+This adapts the [antialgorithm](https://github.com/ctengel/antialgorithm) RSS
+experiment to streams. The pipeline:
+
+```
+./stream_snap.py     # snapshot live followed streams -> ml_data/snapshots/*.json
+./stream_score.py    # rate snapshots a/b/c/d/f       -> ml_data/scores.csv
+./stream_train.py    # train + report accuracy        -> ml_data/model.joblib
+./prioritize.py <server> --ml --dry-run   # see what it would record
+```
+
+Run `stream_snap.py` on a timer to accumulate a corpus, rate a few dozen with
+`stream_score.py`, then `stream_train.py`. Re-run snap/score/train periodically
+to keep the model fresh.
+
+Extra requirements (`pip install -r requirements.txt`): `scikit-learn`, `nltk`,
+`joblib`. One-time NLTK data download:
+
+```
+python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('punkt_tab')"
+```
+
+Needs in `config.py`: everything from level 2 plus `ML_DATA` and `ML_MODEL`
+(see `config.samp.py`).
