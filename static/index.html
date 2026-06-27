@@ -19,6 +19,10 @@
     }
   </style>
   <script>
+    // Drop sub-second precision from an ISO timestamp for display (#23 follow-up).
+    function truncateToSecond(value) {
+      return value ? String(value).replace(/\.\d+/, '') : value;
+    }
     // Generate HTML table from JSON response
     function generateTable(jsonResponse) {
       var tableContainer = document.getElementById('tableContainer');
@@ -59,6 +63,8 @@ while (tableContainer.firstChild) {
 		  urla.href = obj['url']
 		  urla.textContent = obj['url'].substring(obj['url'].lastIndexOf('/') + 1);
 		  td.appendChild(urla);
+          } else if (prop == 'started' || prop == 'updated') {
+          	td.textContent = truncateToSecond(obj[prop]);
           } else {
           	td.textContent = obj[prop];
 	  }
@@ -244,6 +250,20 @@ fetch('/jobs/?filt=active', {
       .then(function() { getApiData(); })
       .catch(function(error) { console.log('Error:', error); });
     }
+    // Resolve a finished job's OI file URL to its real (presigned) download and go there (#23).
+    function openInOi(fileUrl) {
+      fetch(fileUrl, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (file) {
+        var objId = file.file_object.uuid;
+        // fname is "<base>file/<uuid>"; build "<base>object/<objId>/download".
+        var base = fileUrl.replace(/file\/[^/]+\/?$/, '');
+        return fetch(base + 'object/' + objId + '/download');
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (dl) { window.location = dl.presigned; })
+      .catch(function (error) { console.log('Error:', error); });
+    }
     // Build the "Recently finished" table, linking finished jobs to ObjectIndex (#23).
     function generateFinishedTable(jsonResponse) {
       var container = document.getElementById('finishedContainer');
@@ -281,8 +301,10 @@ fetch('/jobs/?filt=active', {
         var tdo = document.createElement('td');
         if (obj['fname']) {
           var oia = document.createElement('a');
-          oia.href = obj['fname'];
+          oia.href = '#';
           oia.textContent = 'Open in OI';
+          var fname = obj['fname'];
+          oia.onclick = function (event) { event.preventDefault(); openInOi(fname); };
           tdo.appendChild(oia);
         }
         row.appendChild(tdo);
