@@ -19,6 +19,10 @@
     }
   </style>
   <script>
+    // Drop sub-second precision from an ISO timestamp for display (#23 follow-up).
+    function truncateToSecond(value) {
+      return value ? String(value).replace(/\.\d+/, '') : value;
+    }
     // Generate HTML table from JSON response
     function generateTable(jsonResponse) {
       var tableContainer = document.getElementById('tableContainer');
@@ -59,6 +63,8 @@ while (tableContainer.firstChild) {
 		  urla.href = obj['url']
 		  urla.textContent = obj['url'].substring(obj['url'].lastIndexOf('/') + 1);
 		  td.appendChild(urla);
+          } else if (prop == 'started' || prop == 'updated') {
+          	td.textContent = truncateToSecond(obj[prop]);
           } else {
           	td.textContent = obj[prop];
 	  }
@@ -81,6 +87,19 @@ while (tableContainer.firstChild) {
 	subx.value = stuck ? 'Force' : 'Stop';
 	formx.appendChild(subx);
 	tdx.appendChild(formx);
+	// Pause = stop the current job and re-queue the same URL at the bottom (#24).
+	if (!stuck) {
+		var formp = document.createElement('form');
+		var subp = document.createElement('input');
+		formp.onsubmit = function (event) {
+			event.preventDefault();
+			pauseJob(obj['id'], obj['url']);
+		}
+		subp.type = 'submit';
+		subp.value = 'Pause';
+		formp.appendChild(subp);
+		tdx.appendChild(formp);
+	}
 	row.appendChild(tdx);
         tbody.appendChild(row);
       });
@@ -171,6 +190,7 @@ fetch('/jobs/?filt=active', {
   console.log(data);
   // Process the data or update the UI here
   generateTable(data)
+  getFinishedData()
 })
 .catch(function(error) {
   console.log('Error:', error.message);
@@ -223,10 +243,99 @@ fetch('/jobs/?filt=active', {
         // Handle network error here
       });
     }
+   // Pause a job: stop it, then re-queue the same URL as a fresh job (#24).
+   function pauseJob(job_id, url) {
+      fetch('/jobs/' + job_id + '/stop', { method: 'POST' })
+      .then(function() { return createJob(url); })
+      .then(function() { getApiData(); })
+      .catch(function(error) { console.log('Error:', error); });
+    }
+    // Resolve a finished job's OI file URL to its real (presigned) download and go there (#23).
+    function openInOi(fileUrl) {
+      fetch(fileUrl, { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (file) {
+        var objId = file.file_object.uuid;
+        // fname is "<base>file/<uuid>"; build "<base>object/<objId>/download".
+        var base = fileUrl.replace(/file\/[^/]+\/?$/, '');
+        return fetch(base + 'object/' + objId + '/download');
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (dl) { window.location = dl.presigned; })
+      .catch(function (error) { console.log('Error:', error); });
+    }
+    // Build the "Recently finished" table, linking finished jobs to ObjectIndex (#23).
+    function generateFinishedTable(jsonResponse) {
+      var container = document.getElementById('finishedContainer');
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      if (!jsonResponse.length) {
+        return;
+      }
+      var heading = document.createElement('h3');
+      heading.textContent = 'Recently finished';
+      container.appendChild(heading);
+      var table = document.createElement('table');
+      var thead = document.createElement('thead');
+      var headerRow = document.createElement('tr');
+      ['url', 'status', 'OI'].forEach(function (label) {
+        var th = document.createElement('th');
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      var tbody = document.createElement('tbody');
+      jsonResponse.forEach(function (obj) {
+        var row = document.createElement('tr');
+        var tdu = document.createElement('td');
+        var urla = document.createElement('a');
+        urla.href = obj['url'];
+        urla.textContent = obj['url'].substring(obj['url'].lastIndexOf('/') + 1);
+        tdu.appendChild(urla);
+        row.appendChild(tdu);
+        var tds = document.createElement('td');
+        tds.textContent = obj['status'];
+        row.appendChild(tds);
+        var tdo = document.createElement('td');
+        if (obj['fname']) {
+          var oia = document.createElement('a');
+          oia.href = '#';
+          oia.textContent = 'Open in OI';
+          var fname = obj['fname'];
+          oia.onclick = function (event) { event.preventDefault(); openInOi(fname); };
+          tdo.appendChild(oia);
+        }
+        row.appendChild(tdo);
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+    function getFinishedData() {
+      fetch('/jobs/?filt=finished', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(function(response) {
+        if (response.ok) {
+          return response.json();
+        }
+        throw new Error('Error: ' + response.status);
+      })
+      .then(function(data) {
+        generateFinishedTable(data);
+      })
+      .catch(function(error) {
+        console.log('Error:', error.message);
+      });
+    }
   </script>
 </head>
 <body onload="getApiData();setupBookmarklet();checkAutoSubmit()">
   <div id="tableContainer"></div>
+  <div id="finishedContainer"></div>
   <div>
   <form id="postForm" onsubmit="postData(event)">
     <label for="url">URL:</label>

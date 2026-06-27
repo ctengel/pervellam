@@ -1,9 +1,30 @@
 # pervellam
 
+## install
+
+1. Clone this repo and `cd` into it.
+2. Install the dependencies (server + worker):
+
+   ```
+   pip install -U "yt-dlp[default]" "fastapi[standard]" \
+     https://github.com/ctengel/objectindex/archive/refs/tags/v0.3.5.tar.gz \
+     https://github.com/ctengel/simpler-objects/archive/refs/tags/v0.4.6.tar.gz
+   ```
+
+   `fastapi[standard]` pulls in what the server needs (FastAPI, uvicorn,
+   SQLAlchemy, pydantic); `objectindex` / `simpler-objects` are used by the
+   worker to upload to ObjectIndex; `yt-dlp` does the actual downloading.
+3. Create your config from the template and edit it:
+
+   ```
+   cp config.samp.py config.py
+   ```
+4. Run the server (see below). The server listens on port **29206**.
+
 ## server
 
 ```
-fastapi run --port 29206
+fastapi run --port 29206 server.py
 ```
 
 or for development:
@@ -17,6 +38,30 @@ fastapi dev --port 29206 --host 0.0.0.0 server.py
 A worker runs `worker.py` to pull jobs from a Pervellam server and download them
 with [yt-dlp](https://github.com/yt-dlp/yt-dlp). `worker-loop.sh` wraps it in a
 loop so a node keeps picking up new jobs.
+
+### Running a worker
+
+The worker uploads finished downloads to ObjectIndex, so it needs `OBJIDX_URL`
+and `OBJIDX_AUTH` set in its environment. Point it at the server's port (29206).
+
+One shot (picks up at most one job, then exits):
+
+```
+OBJIDX_URL=... OBJIDX_AUTH=... ./worker.py <server> <worker-id> <datadir> <bucket>
+```
+
+- `<server>` — Pervellam server URL, e.g. `http://localhost:29206/`
+- `<worker-id>` — a name unique to this worker (recorded as the job's `dler`)
+- `<datadir>` — temp dir for downloads; the worker creates a `<worker-id>-<job-id>`
+  subdir under it per job
+- `<bucket>` — ObjectIndex bucket to upload into
+
+Keep picking up jobs in a loop (`worker-loop.sh` sleeps `<interval>` seconds
+between runs):
+
+```
+OBJIDX_URL=... OBJIDX_AUTH=... ./worker-loop.sh <server> <interval> <worker-id> <datadir> <bucket>
+```
 
 ### Keeping yt-dlp up to date
 
