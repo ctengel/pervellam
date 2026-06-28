@@ -335,7 +335,6 @@ fetch('/jobs/?filt=active', {
 </head>
 <body onload="getApiData();setupBookmarklet();checkAutoSubmit()">
   <div id="tableContainer"></div>
-  <div id="finishedContainer"></div>
   <div>
   <form id="postForm" onsubmit="postData(event)">
     <label for="url">URL:</label>
@@ -343,6 +342,7 @@ fetch('/jobs/?filt=active', {
     <input type="submit" value="Submit">
   </form>
   </div>
+  <div id="finishedContainer"></div>
   <div>
     <p>Drag this to your bookmarks bar to queue the page you're viewing:
        <a id="bookmarklet" href="#">Pervellam</a></p>

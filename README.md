@@ -33,6 +33,23 @@ or for development:
 fastapi dev --port 29206 --host 0.0.0.0 server.py
 ```
 
+### ObjectIndex CORS
+
+The web UI's "Open in OI" links call the ObjectIndex API directly from the
+browser, so ObjectIndex must allow cross-origin requests from the host serving
+Pervellam. On the ObjectIndex service (FastAPI), enable CORS for Pervellam's
+origin:
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(CORSMiddleware,
+                   allow_origins=["https://<pervellam-origin>"],
+                   allow_methods=["GET"])
+```
+
+Without this, clicking "Open in OI" fails with a CORS error in the browser
+console.
+
 ## worker
 
 A worker runs `worker.py` to pull jobs from a Pervellam server and download them
@@ -52,8 +69,8 @@ OBJIDX_URL=... OBJIDX_AUTH=... ./worker.py <server> <worker-id> <datadir> <bucke
 
 - `<server>` — Pervellam server URL, e.g. `http://localhost:29206/`
 - `<worker-id>` — a name unique to this worker (recorded as the job's `dler`)
-- `<datadir>` — temp dir for downloads; the worker creates a `<worker-id>-<job-id>`
-  subdir under it per job
+- `<datadir>` — temp dir for downloads; the worker creates a uniquely-suffixed
+  `<worker-id>-<job-id>-XXXXXX` subdir under it per job
 - `<bucket>` — ObjectIndex bucket to upload into
 
 Keep picking up jobs in a loop (`worker-loop.sh` sleeps `<interval>` seconds

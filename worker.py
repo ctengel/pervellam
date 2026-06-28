@@ -9,6 +9,7 @@ import time
 import warnings
 import os
 import pathlib
+import tempfile
 import obj_idx.dlp_lpm_meta as dlpmeta
 import obj_idx.client as oiclient
 import pervellam_client
@@ -130,10 +131,8 @@ def cdul_wrapper(server, dler, datadir, bucket):
     if not myj:
         print('No jobs found')
         return
-    startpath = pathlib.Path(datadir)
-    subdir_name = f"{dler}-{myj.job_id}"
-    newpath = startpath.joinpath(subdir_name)
-    newpath.mkdir()
+    newpath = pathlib.Path(tempfile.mkdtemp(prefix=f"{dler}-{myj.job_id}-",
+                                            dir=datadir))
     os.chdir(newpath)
     file_info = run_one(dler, myj)
     if not file_info['fname']:

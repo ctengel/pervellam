@@ -91,15 +91,23 @@ def joblist(filt: str = None, db: Session = Depends(get_db)) -> list[Job]:
     if filt == 'finished':
         return (db.query(JobTable)
                 .filter(JobTable.status.in_(['ended', 'stopped']))
+                .filter(JobTable.fname.isnot(None))
                 .order_by(JobTable.updated.desc())
                 .limit(20)
                 .all())
     return db.query(JobTable).all()
 
+def get_job_or_404(db, job_id):
+    """Fetch a job by id or raise a 404 if it does not exist"""
+    db_job = db.query(JobTable).get(job_id)
+    if db_job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return db_job
+
 @app.get('/jobs/{job_id}')
 def onejob(job_id: int, db: Session = Depends(get_db)) -> Job:
     """Return details of one job"""
-    return db.query(JobTable).get(job_id)
+    return get_job_or_404(db, job_id)
 
 
 @app.post('/jobs/', status_code=201)
@@ -117,7 +125,7 @@ def newjob(job: Job, db: Session = Depends(get_db)) -> Job:
 def assign(job_id: int, dler: Dler, db: Session = Depends(get_db)) -> None:
     """Assign a job to a worker"""
     # TODO we need to probably implement some locking - in rare conditions it seems two can get started and think they own it
-    db_job = db.query(JobTable).get(job_id)
+    db_job = get_job_or_404(db, job_id)
     if db_job.status != 'new':
         raise HTTPException(status_code=409, detail="Cannot be assigned")
     db_job.status = 'assigned'
@@ -130,7 +138,7 @@ def assign(job_id: int, dler: Dler, db: Session = Depends(get_db)) -> None:
 def stop(job_id:int, stop_payload: StopForce = None, db: Session = Depends(get_db)) -> None:
     """Request that a job be stopped before it has ended"""
     force = bool(stop_payload and stop_payload.force)
-    db_job = db.query(JobTable).get(job_id)
+    db_job = get_job_or_404(db, job_id)
     if db_job.status == 'new':
         db_job.status = 'stopped'
         db.commit()
@@ -150,7 +158,7 @@ def stop(job_id:int, stop_payload: StopForce = None, db: Session = Depends(get_d
 @app.patch('/jobs/{job_id}')
 def patch(job_id: int, job: Job, db: Session = Depends(get_db)) -> Job:
     """Worker updates a job with current status"""
-    db_job = db.query(JobTable).get(job_id)
+    db_job = get_job_or_404(db, job_id)
     update_data = job.dict(exclude_unset=True)
     #db_job.copy(update=update_data)
     for field, value in update_data.items():
