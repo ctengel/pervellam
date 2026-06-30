@@ -9,6 +9,8 @@ import time
 import warnings
 import os
 import pathlib
+import shutil
+import sys
 import tempfile
 import obj_idx.dlp_lpm_meta as dlpmeta
 import obj_idx.client as oiclient
@@ -17,6 +19,24 @@ import config
 
 WAIT_FOR_KILL = 200
 LPM_LIB = 'TWCH'
+DEFAULT_MIN_FREE_BYTES = 32 * 1024**3  # 32 GiB
+MIN_FREE_ENV = 'WORKER_MIN_FREE_BYTES'
+
+
+def check_free_space(datadir):
+    """Exit non-zero if free space in datadir is below the configured minimum.
+
+    Minimum (bytes) comes from the WORKER_MIN_FREE_BYTES env var, defaulting to
+    32 GiB. A value of 0 disables the check.
+    """
+    min_free = int(os.environ.get(MIN_FREE_ENV, DEFAULT_MIN_FREE_BYTES))
+    if min_free <= 0:
+        return
+    free = shutil.disk_usage(datadir).free
+    if free < min_free:
+        print(f'Refusing to claim job: only {free} bytes free in {datadir}, '
+              f'need {min_free} (set {MIN_FREE_ENV}=0 to disable)')
+        sys.exit(1)
 
 
 class DLPJob:
@@ -124,6 +144,7 @@ def run_one(dler, myj):
 
 def cdul_wrapper(server, dler, datadir, bucket):
     """Put in a specific directory and upload to OI"""
+    check_free_space(datadir)
     cwd = os.getcwd()
     print(f'Worker {dler} looking for jobs...')
     myp = pervellam_client.Pervellam(server, dler)

@@ -73,6 +73,12 @@ OBJIDX_URL=... OBJIDX_AUTH=... ./worker.py <server> <worker-id> <datadir> <bucke
   `<worker-id>-<job-id>-XXXXXX` subdir under it per job
 - `<bucket>` — ObjectIndex bucket to upload into
 
+Before claiming a job the worker checks free space in `<datadir>`. If less than
+`WORKER_MIN_FREE_BYTES` (bytes; default 32 GiB) is free it prints a message and
+exits non-zero without claiming — in the loop this just defers to the next run
+once space frees up. Set `WORKER_MIN_FREE_BYTES=0` to disable the check. This
+variable is shared with pervellam.
+
 Keep picking up jobs in a loop (`worker-loop.sh` sleeps `<interval>` seconds
 between runs):
 
