@@ -86,6 +86,28 @@ between runs):
 OBJIDX_URL=... OBJIDX_AUTH=... ./worker-loop.sh <server> <interval> <worker-id> <datadir> <bucket>
 ```
 
+### Reclaiming scratch space
+
+When a download fails, is stopped, or the worker is killed mid-job, the per-job
+directory under `<datadir>` is left behind — sometimes holding a large media
+file that never made it to ObjectIndex. `cleanup.py` reclaims that space safely:
+
+```
+OBJIDX_URL=... OBJIDX_AUTH=... ./cleanup.py <server> <worker-id> <datadir> <bucket> [--dry-run]
+```
+
+For each of this worker's leftover dirs whose job is in a terminal state
+(`ended`/`stopped`) it either confirms the media is already in OI (the job's
+`fname` is set) or **uploads it to OI first**, and only then deletes the local
+directory. It **never deletes media that isn't in OI**, and never touches dirs
+for active jobs, unknown/missing jobs, or other workers. Use `--dry-run` to see
+what would be reclaimed without changing anything. Run it manually or from cron,
+e.g. hourly:
+
+```
+0 * * * * OBJIDX_URL=... OBJIDX_AUTH=... ~/pervellam/cleanup.py <server> <worker-id> <datadir> <bucket>
+```
+
 ### Keeping yt-dlp up to date
 
 yt-dlp must be kept current — sites change constantly and stable releases are often too old to work.
