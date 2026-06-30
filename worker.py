@@ -142,6 +142,26 @@ def run_one(dler, myj):
             continue
 
 
+def upload_dir(newpath, bucket, myj):
+    """Upload the media in newpath to OI and record its OI URL on the job.
+
+    Returns the local media_file Path (caller deletes it). Raises if there is no
+    info-json / media to upload, so callers can decline to delete on failure.
+    """
+    info_json = None
+    for pij in newpath.iterdir():
+        if tuple(pij.suffixes) == ('.info', '.json'):
+            info_json = pij
+    assert info_json
+    info_json_data = dlpmeta.DLPMetaData(from_file=info_json, partial=True)
+    media_file = info_json_data.get_media_file()
+    assert media_file != info_json
+    info_json_data.add_lpm(LPM_LIB)
+    oi_file = info_json_data.upload(oiclient.get_obj_idx_env(), bucket)
+    myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid)})
+    return media_file
+
+
 def cdul_wrapper(server, dler, datadir, bucket):
     """Put in a specific directory and upload to OI"""
     check_free_space(datadir)
@@ -160,19 +180,8 @@ def cdul_wrapper(server, dler, datadir, bucket):
         warnings.warn('no file to upload')
         os.chdir(cwd)
         return
-    info_json = None
-    for pij in newpath.iterdir():
-        if tuple(pij.suffixes) == ('.info', '.json'):
-            info_json = pij
-    assert info_json
-    assert info_json.name != file_info['fname']
-    info_json_data = dlpmeta.DLPMetaData(from_file=info_json, partial=True)
-    media_file = info_json_data.get_media_file()
-    assert media_file != info_json
+    media_file = upload_dir(newpath, bucket, myj)
     assert media_file.name == file_info['fname']
-    info_json_data.add_lpm(LPM_LIB)
-    oi_file = info_json_data.upload(oiclient.get_obj_idx_env(), bucket)
-    myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid)})
     media_file.unlink()
     os.chdir(cwd)
 
