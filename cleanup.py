@@ -4,9 +4,14 @@
 
 For each per-job directory left under datadir, this finds the matching Pervellam
 job and only removes the directory once we are certain its media is safe in
-ObjectIndex (OI): either the job's ``fname`` already points at OI, or we upload
-the media ourselves first. Active jobs, unknown/missing jobs, and directories we
-cannot upload are left untouched.
+ObjectIndex (OI): either the job's ``fname`` already points at OI (an http URL —
+a bare filename there is just a progress snapshot and proves nothing), or we
+upload the media ourselves first. Active jobs, unknown/missing jobs, and
+directories we cannot upload are left untouched.
+
+Jobs stuck in 'upload' status (download done, upload to OI interrupted) are
+finished here too. Since a job the worker is *currently* uploading has that same
+status, run this while the worker is idle to avoid a duplicate upload.
 """
 
 import argparse
@@ -19,6 +24,8 @@ import pervellam_client
 import worker
 
 TERMINAL_STATUSES = ('ended', 'stopped')
+# 'upload' = download finished but the OI upload was interrupted (see worker.py)
+SWEEPABLE_STATUSES = TERMINAL_STATUSES + ('upload',)
 
 
 def parse_job_id(dirname, dler):
@@ -63,24 +70,29 @@ def sweep_dir(path, dler, bucket, myp, dry_run):
     if info is None:
         warnings.warn(f'{path.name}: no job {job_id} on server — manual review, keeping')
         return 0
-    if info.get('status') not in TERMINAL_STATUSES:
-        print(f'{path.name}: job {job_id} is {info.get("status")} (active) — keeping')
+    status = info.get('status')
+    if status not in SWEEPABLE_STATUSES:
+        print(f'{path.name}: job {job_id} is {status} (active) — keeping')
         return 0
-    if info.get('fname'):
+    # Only an fname holding an OI URL proves the media is in OI: while
+    # downloading, the worker PATCHes the bare local filename into fname.
+    if str(info.get('fname') or '').startswith('http'):
         if dry_run:
             print(f'{path.name}: in OI already — would delete ({size} bytes)')
         else:
             shutil.rmtree(path)
             print(f'{path.name}: in OI already — deleted ({size} bytes)')
         return size
-    # Terminal job, not yet in OI: upload first, then delete.
+    # Swept job whose media never reached OI: upload first, then delete.
     if dry_run:
         print(f'{path.name}: job {job_id} not in OI — would upload then delete ({size} bytes)')
         return size
+    # for a stuck 'upload' the ended-vs-stopped distinction is long gone; use 'ended'
+    final_status = status if status in TERMINAL_STATUSES else 'ended'
     cwd = os.getcwd()
     try:
         os.chdir(path)
-        worker.upload_dir(path, bucket, job)
+        worker.upload_dir(path, bucket, job, final_status)
     except Exception as exc:  # noqa: BLE001 - any failure must NOT delete
         os.chdir(cwd)
         warnings.warn(f'{path.name}: could not upload job {job_id} to OI ({exc}) — keeping')

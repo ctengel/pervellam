@@ -89,76 +89,102 @@ class DLPJob:
                                                            datetime.timezone.utc).isoformat()}
 
 
+def report_downloaded(myj, file_info, final_status):
+    """Record that downloading is done: 'upload' status until media is in OI.
+
+    A job only becomes 'ended'/'stopped' once its media is safely in OI (or
+    there is nothing to upload), so an interrupted upload stays visible as
+    'upload' instead of silently stranding the media (#42/#43).
+    """
+    file_info['status'] = 'upload' if file_info['fname'] else final_status
+    myj.update(file_info, retry=True)
+    return file_info, final_status
+
+
 def run_one(dler, myj):
-    """Check for a new job, assign, run, wait to finish or stop"""
+    """Check for a new job, assign, run, wait to finish or stop
+
+    Returns (file_info, final_status): the last snapshot of the downloaded
+    file and the terminal status ('ended'/'stopped') to record once the media
+    is safely in OI.
+    """
     print(f'Assigned job {myj.job_id}; getting more details...')
     job_info = myj.get(retry=True)
     assert job_info["dler"] == dler
     myd = DLPJob(job_info["url"])
-    print('Job commenced, doing initial update...')
-    job_info = myj.update({'started': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                           'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                           'status': 'running'},
-                          retry=True)
-    print('Looping and waiting...')
-    while True:
-        if job_info["dler"] != dler:
-            warnings.warn('Conflict dectected, self destructing...')
-            myd.stop()
-            # TODO throw a better exception here
-            assert False
-        time.sleep(60)
-        try:
-            pjs = myj.get()["status"]
-        except pervellam_client.requests.exceptions.RequestException:
-            # NOTE this does not use the myj.update(retry=True) logic as below
-            #      because since this download is still healthy better to stay in normal loop
-            warnings.warn('Cannot get status from Pervellam server, will retry in a minute...')
-            continue
-        # 'stopped' here means a force-stop already flipped the status (issue #39);
-        # treat it like a stopreq so the still-running download is actually killed.
-        if pjs in ("stopreq", "stopped"):
-            print('Recieved stop request...')
-            myd.stop()
-            print('Job stopped!')
+    try:
+        print('Job commenced, doing initial update...')
+        job_info = myj.update({'started': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                               'status': 'running'},
+                              retry=True)
+        print('Looping and waiting...')
+        while True:
+            if job_info["dler"] != dler:
+                warnings.warn('Conflict dectected, self destructing...')
+                # TODO throw a better exception here
+                assert False
+            time.sleep(60)
+            try:
+                pjs = myj.get()["status"]
+            except pervellam_client.requests.exceptions.RequestException:
+                # NOTE this does not use the myj.update(retry=True) logic as below
+                #      because since this download is still healthy better to stay in normal loop
+                warnings.warn('Cannot get status from Pervellam server, will retry in a minute...')
+                continue
+            # 'stopped' here means a force-stop already flipped the status (issue #39);
+            # treat it like a stopreq so the still-running download is actually killed.
+            if pjs in ("stopreq", "stopped"):
+                print('Recieved stop request...')
+                myd.stop()
+                print('Job stopped!')
+                return report_downloaded(myj, myd.file_info(), 'stopped')
             file_info = myd.file_info()
-            file_info['status'] = 'stopped'
-            myj.update(file_info, retry=True)
-            return file_info
-        file_info = myd.file_info()
-        if not myd.status():
-            print('Job stopped organically!')
-            myd.close()
-            # TODO indicate 'failed' if nonzero or file missing etc
-            file_info['status'] = 'ended'
-            myj.update(file_info, retry=True)
-            return file_info
-        try:
-            job_info = myj.update(file_info)
-        except pervellam_client.requests.exceptions.RequestException:
-            # NOTE this does not use the myj.update(retry=True) logic as above
-            #      because since this download is still healthy better to stay in normal loop
-            warnings.warn('Cannot update Pervellam server, will retry in a minute...')
-            continue
+            if not myd.status():
+                print('Job stopped organically!')
+                myd.close()
+                # TODO indicate 'failed' if nonzero or file missing etc
+                return report_downloaded(myj, file_info, 'ended')
+            try:
+                job_info = myj.update(file_info)
+            except pervellam_client.requests.exceptions.RequestException:
+                # NOTE this does not use the myj.update(retry=True) logic as above
+                #      because since this download is still healthy better to stay in normal loop
+                warnings.warn('Cannot update Pervellam server, will retry in a minute...')
+                continue
+    finally:
+        # never leave yt-dlp downloading detached if we bail out for any reason
+        if myd.status():
+            myd.stop()
 
 
-def upload_dir(newpath, bucket, myj):
-    """Upload the media in newpath to OI and record its OI URL on the job.
+def upload_dir(newpath, bucket, myj, final_status, expect_fname=None):
+    """Upload the media in newpath to OI, then record its OI URL and
+    final_status on the job in a single update.
 
-    Returns the local media_file Path (caller deletes it). Raises if there is no
-    info-json / media to upload, so callers can decline to delete on failure.
+    Returns the local media_file Path (caller deletes it). Raises if there is
+    no info-json / media to upload (or the media is not the expect_fname the
+    download reported), so callers can decline to delete on failure; the job
+    then stays in 'upload' status rather than looking done.
     """
     info_json = None
     for pij in newpath.iterdir():
         if tuple(pij.suffixes) == ('.info', '.json'):
             info_json = pij
-    assert info_json
+    if not info_json:
+        raise RuntimeError(f'no info-json in {newpath}')
     info_json_data = dlpmeta.DLPMetaData(from_file=info_json, partial=True)
     media_file = info_json_data.get_media_file()
-    assert media_file != info_json
+    if media_file == info_json:
+        raise RuntimeError(f'no media besides info-json {info_json} in {newpath}')
+    if expect_fname and media_file.name != expect_fname:
+        raise RuntimeError(f'info-json names media {media_file.name} '
+                           f'but download reported {expect_fname}')
     info_json_data.add_lpm(LPM_LIB)
     oi_file = info_json_data.upload(oiclient.get_obj_idx_env(), bucket)
-    myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid)})
+    myj.update({'fname': oi_file.oio.url + 'file/' + str(oi_file.uuid),
+                'status': final_status},
+               retry=True)
     return media_file
 
 
@@ -175,15 +201,21 @@ def cdul_wrapper(server, dler, datadir, bucket):
     newpath = pathlib.Path(tempfile.mkdtemp(prefix=f"{dler}-{myj.job_id}-",
                                             dir=datadir))
     os.chdir(newpath)
-    file_info = run_one(dler, myj)
-    if not file_info['fname']:
-        warnings.warn('no file to upload')
+    try:
+        file_info, final_status = run_one(dler, myj)
+        if not file_info['fname']:
+            warnings.warn('no file to upload')
+            return
+        try:
+            media_file = upload_dir(newpath, bucket, myj, final_status,
+                                    expect_fname=file_info['fname'])
+        except Exception as exc:  # noqa: BLE001 - keep media, stay in 'upload'
+            warnings.warn(f'could not upload job {myj.job_id} to OI ({exc}); '
+                          'media kept on disk, job left in upload status for cleanup.py')
+            sys.exit(1)
+        media_file.unlink()
+    finally:
         os.chdir(cwd)
-        return
-    media_file = upload_dir(newpath, bucket, myj)
-    assert media_file.name == file_info['fname']
-    media_file.unlink()
-    os.chdir(cwd)
 
 def run_cli():
     """Basic CLI"""
