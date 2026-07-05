@@ -89,9 +89,11 @@ def joblist(filt: str = None, db: Session = Depends(get_db)) -> list[Job]:
     if filt == 'active':
         return db.query(JobTable).filter(~JobTable.status.in_(['ended', 'stopped'])).all()
     if filt == 'finished':
+        # fname is only an OI link once the upload finished (an http URL);
+        # earlier it holds the bare local filename, useless to link to (#42)
         return (db.query(JobTable)
                 .filter(JobTable.status.in_(['ended', 'stopped']))
-                .filter(JobTable.fname.isnot(None))
+                .filter(JobTable.fname.like('http%'))
                 .order_by(JobTable.updated.desc())
                 .limit(20)
                 .all())

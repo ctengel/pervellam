@@ -73,6 +73,13 @@ OBJIDX_URL=... OBJIDX_AUTH=... ./worker.py <server> <worker-id> <datadir> <bucke
   `<worker-id>-<job-id>-XXXXXX` subdir under it per job
 - `<bucket>` — ObjectIndex bucket to upload into
 
+A job moves through `new → assigned → running → upload → ended`/`stopped`.
+`upload` means the download itself is done but the media is not yet confirmed
+in ObjectIndex — a job only becomes `ended`/`stopped` once its media is safely
+uploaded (its `fname` then holds the OI URL). If the upload fails or the worker
+dies, the job stays visibly in `upload` and its media stays on disk; run
+`cleanup.py` (below) to finish it.
+
 Before claiming a job the worker checks free space in `<datadir>`. If less than
 `WORKER_MIN_FREE_BYTES` (bytes; default 32 GiB) is free it prints a message and
 exits non-zero without claiming — in the loop this just defers to the next run
@@ -85,6 +92,27 @@ between runs):
 ```
 OBJIDX_URL=... OBJIDX_AUTH=... ./worker-loop.sh <server> <interval> <worker-id> <datadir> <bucket>
 ```
+
+### Reclaiming scratch space
+
+When a download fails, is stopped, or the worker is killed mid-job, the per-job
+directory under `<datadir>` is left behind — sometimes holding a large media
+file that never made it to ObjectIndex. `cleanup.py` reclaims that space safely:
+
+```
+OBJIDX_URL=... OBJIDX_AUTH=... ./cleanup.py <server> <worker-id> <datadir> <bucket> [--dry-run]
+```
+
+For each of this worker's leftover dirs whose job is `ended`/`stopped` or stuck
+in `upload`, it either confirms the media is already in OI (the job's `fname`
+is an OI URL) or **uploads it to OI first**, and only then deletes the local
+directory. It **never deletes media that isn't in OI**, and never touches dirs
+for downloading jobs, unknown/missing jobs, or other workers. Use `--dry-run`
+to see what would be reclaimed without changing anything.
+
+Run it while the worker is idle: a job the worker is *currently* uploading is
+also in `upload` status, and sweeping it concurrently could upload a duplicate
+to OI.
 
 ### Keeping yt-dlp up to date
 
