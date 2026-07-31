@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 
-"""Reclaim leftover worker scratch directories, preserving media in OI first.
+"""Upload media the worker left behind, then delete the local media file.
 
 For each per-job directory left under datadir, this finds the matching Pervellam
-job and only removes the directory once we are certain its media is safe in
+job and deletes its media file only once we are certain the media is safe in
 ObjectIndex (OI): either the job's ``fname`` already points at OI (an http URL —
 a bare filename there is just a progress snapshot and proves nothing), or we
-upload the media ourselves first. Active jobs, unknown/missing jobs, and
-directories we cannot upload are left untouched.
+upload the media ourselves first. This is exactly what a healthy worker run does
+(see worker.cdul_wrapper), just after the fact.
+
+Only media files are ever removed: directories and info-jsons are left alone, as
+are active jobs, unknown/missing jobs, and media we cannot upload. Dirs with no
+media left to act on are reported as a single count rather than one line each.
 
 Jobs stuck in 'upload' status (download done, upload to OI interrupted) are
 finished here too. Since a job the worker is *currently* uploading has that same
 status, run this while the worker is idle to avoid a duplicate upload.
-
-Dirs holding no media at all (yt-dlp exited before writing anything, so the job
-ended with no fname) have nothing to preserve and nothing to upload; they are
-left in place and reported as a single count rather than one line each.
 """
 
 import argparse
 import os
 import pathlib
-import shutil
 import warnings
 
 import obj_idx.dlp_lpm_meta as dlpmeta
@@ -45,35 +44,41 @@ def parse_job_id(dirname, dler):
     return int(head) if head.isdigit() else None
 
 
-def dir_size(path):
+def is_info_json(path):
+    """True if path is a yt-dlp info-json (never deleted, never uploadable)."""
+    return tuple(path.suffixes) == ('.info', '.json')
+
+
+def dir_size(path, skip_info_json=False):
     """Total size in bytes of everything under path."""
-    return sum(f.stat().st_size for f in path.rglob('*') if f.is_file())
+    return sum(f.stat().st_size for f in path.rglob('*')
+               if f.is_file() and not (skip_info_json and is_info_json(f)))
 
 
-def nothing_to_preserve(path):
-    """True only if we can positively establish path holds no media.
+def find_media(path):
+    """Return the media file in path that upload_dir would act on, or None.
 
     Mirrors what worker.upload_dir needs (an info-json naming a media file that
     is really there) without uploading, so --dry-run and a real run agree on
-    what is uploadable. Anything we cannot make sense of — bytes with no
-    info-json, an unreadable info-json — returns False so it keeps going down
-    the loud 'keeping' path for manual review.
+    what is actionable. Anything we cannot make sense of — no info-json, an
+    unreadable one, a playlist — is None: there is nothing we can safely do.
     """
-    if dir_size(path) == 0:
-        return True  # not a byte was ever written
     info_json = None
     for pij in path.iterdir():
-        if tuple(pij.suffixes) == ('.info', '.json'):
+        if is_info_json(pij):
             info_json = pij
     if not info_json:
-        return False
+        return None
     try:
         media_file = dlpmeta.DLPMetaData(from_file=info_json, partial=True).get_media_file()
-    except Exception:  # noqa: BLE001 - unreadable metadata deserves a look, not a tally
-        return False
+    except Exception:  # noqa: BLE001 - unreadable metadata means nothing to act on
+        return None
+    if media_file == info_json:
+        return None
     # get_media_file gives a bare name when the info-json carries 'filename',
     # an absolute path otherwise; path / either one resolves correctly.
-    return media_file == info_json or not (path / media_file).exists()
+    media_file = path / media_file
+    return media_file if media_file.exists() else None
 
 
 def fetch_job(myp, job_id):
@@ -91,15 +96,40 @@ def fetch_job(myp, job_id):
         return None, None
 
 
+def upload_and_unlink(path, job_id, job, bucket, status):
+    """Upload path's media to OI, then delete just that file. Returns bytes freed.
+
+    Any upload failure leaves everything on disk and the job in its current
+    status, so the media is never lost and the next run can retry.
+    """
+    # for a stuck 'upload' the ended-vs-stopped distinction is long gone; use 'ended'
+    final_status = status if status in TERMINAL_STATUSES else 'ended'
+    cwd = os.getcwd()
+    try:
+        os.chdir(path)
+        uploaded = worker.upload_dir(path, bucket, job, final_status)
+    except Exception as exc:  # noqa: BLE001 - any failure must NOT delete
+        warnings.warn(f'{path.name}: could not upload job {job_id} to OI ({exc}) — keeping')
+        return 0
+    finally:
+        os.chdir(cwd)
+    # upload_dir returns the media path it uploaded, bare name and all; join it
+    # back onto path since we are no longer inside the dir (worker.py:216)
+    media = path / uploaded
+    size = media.stat().st_size
+    media.unlink()
+    print(f'{path.name}: uploaded to OI then deleted {media.name} ({size} bytes)')
+    return size
+
+
 def sweep_dir(path, dler, bucket, myp, dry_run):
     """Decide and (unless dry_run) act on one scratch dir.
 
-    Returns (bytes reclaimed, dirs skipped for having nothing to preserve).
+    Returns (media bytes reclaimed, dirs counted as having no media to act on).
     """
     job_id = parse_job_id(path.name, dler)
     if job_id is None:
         return 0, 0  # not one of our scratch dirs
-    size = dir_size(path)
     job, info = fetch_job(myp, job_id)
     if info is None:
         warnings.warn(f'{path.name}: no job {job_id} on server — manual review, keeping')
@@ -108,42 +138,37 @@ def sweep_dir(path, dler, bucket, myp, dry_run):
     if status not in SWEEPABLE_STATUSES:
         print(f'{path.name}: job {job_id} is {status} (active) — keeping')
         return 0, 0
-    # Only an fname holding an OI URL proves the media is in OI: while
-    # downloading, the worker PATCHes the bare local filename into fname.
-    if str(info.get('fname') or '').startswith('http'):
-        if dry_run:
-            print(f'{path.name}: in OI already — would delete ({size} bytes)')
-        else:
-            shutil.rmtree(path)
-            print(f'{path.name}: in OI already — deleted ({size} bytes)')
-        return size, 0
-    # No media here, so there is nothing to upload and nothing at risk. Leave the
-    # dir alone (it costs no space) and let the caller report these as a count.
-    if nothing_to_preserve(path):
+    media = find_media(path)
+    if media is None:
+        # A stranded .part, or bytes with no info-json: real space we cannot
+        # upload and must not delete, so say so rather than counting it away.
+        leftover = dir_size(path, skip_info_json=True)
+        if leftover:
+            warnings.warn(f'{path.name}: no uploadable media but {leftover} bytes '
+                          'on disk — manual review, keeping')
+            return 0, 0
         if status == 'upload':
             # the worker recorded an fname that is neither on disk nor in OI
             warnings.warn(f'{path.name}: job {job_id} is in upload status but has '
                           'no media — manual review, keeping')
             return 0, 0
-        return 0, 1
+        return 0, 1  # media already uploaded and unlinked, or never downloaded
+    size = media.stat().st_size
+    # Only an fname holding an OI URL proves the media is in OI: while
+    # downloading, the worker PATCHes the bare local filename into fname.
+    if str(info.get('fname') or '').startswith('http'):
+        if dry_run:
+            print(f'{path.name}: media in OI — would delete {media.name} ({size} bytes)')
+        else:
+            media.unlink()
+            print(f'{path.name}: media in OI — deleted {media.name} ({size} bytes)')
+        return size, 0
     # Swept job whose media never reached OI: upload first, then delete.
     if dry_run:
-        print(f'{path.name}: job {job_id} not in OI — would upload then delete ({size} bytes)')
+        print(f'{path.name}: job {job_id} not in OI — would upload then delete '
+              f'{media.name} ({size} bytes)')
         return size, 0
-    # for a stuck 'upload' the ended-vs-stopped distinction is long gone; use 'ended'
-    final_status = status if status in TERMINAL_STATUSES else 'ended'
-    cwd = os.getcwd()
-    try:
-        os.chdir(path)
-        worker.upload_dir(path, bucket, job, final_status)
-    except Exception as exc:  # noqa: BLE001 - any failure must NOT delete
-        os.chdir(cwd)
-        warnings.warn(f'{path.name}: could not upload job {job_id} to OI ({exc}) — keeping')
-        return 0, 0
-    os.chdir(cwd)
-    shutil.rmtree(path)
-    print(f'{path.name}: uploaded to OI then deleted ({size} bytes)')
-    return size, 0
+    return upload_and_unlink(path, job_id, job, bucket, status), 0
 
 
 def cleanup(server, dler, datadir, bucket, dry_run=False):
@@ -157,7 +182,7 @@ def cleanup(server, dler, datadir, bucket, dry_run=False):
             total += reclaimed
             skipped += nomedia
     if skipped:
-        print(f'{skipped} dirs with nothing to preserve — skipped')
+        print(f'{skipped} dirs with no media — nothing to do')
     verb = 'would reclaim' if dry_run else 'reclaimed'
     print(f'{verb} {total} bytes')
 

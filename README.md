@@ -97,7 +97,8 @@ OBJIDX_URL=... OBJIDX_AUTH=... ./worker-loop.sh <server> <interval> <worker-id> 
 
 When a download fails, is stopped, or the worker is killed mid-job, the per-job
 directory under `<datadir>` is left behind — sometimes holding a large media
-file that never made it to ObjectIndex. `cleanup.py` reclaims that space safely:
+file that never made it to ObjectIndex. `cleanup.py` finishes the job the worker
+started, reclaiming that space safely:
 
 ```
 OBJIDX_URL=... OBJIDX_AUTH=... ./cleanup.py <server> <worker-id> <datadir> <bucket> [--dry-run]
@@ -106,9 +107,13 @@ OBJIDX_URL=... OBJIDX_AUTH=... ./cleanup.py <server> <worker-id> <datadir> <buck
 For each of this worker's leftover dirs whose job is `ended`/`stopped` or stuck
 in `upload`, it either confirms the media is already in OI (the job's `fname`
 is an OI URL) or **uploads it to OI first**, and only then deletes the local
-directory. It **never deletes media that isn't in OI**, and never touches dirs
-for downloading jobs, unknown/missing jobs, or other workers. Use `--dry-run`
-to see what would be reclaimed without changing anything.
+media file — exactly what the worker itself does after a clean upload. Nothing
+else is removed: directories and info-jsons stay, and it **never deletes media
+that isn't in OI**, nor touches dirs for downloading jobs, unknown/missing jobs,
+or other workers. Dirs holding no media are reported as a count; leftover bytes
+it cannot upload (a stranded `.part`, or a dir with no info-json) are called out
+individually for manual review. Use `--dry-run` to see what would be reclaimed
+without changing anything.
 
 Run it while the worker is idle: a job the worker is *currently* uploading is
 also in `upload` status, and sweeping it concurrently could upload a duplicate
