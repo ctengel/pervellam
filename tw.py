@@ -15,6 +15,16 @@ class Tw:
         self.user_access_token = None
         self.id_url = id_url
         self.client_secret = client_secret
+    @classmethod
+    def from_config(cls, config):
+        """Build a Tw from a pervellam config module (TW_* values)"""
+        return cls(url=config.TW_URL,
+                   client_id=config.TW_CLI,
+                   app_access_token=config.TW_APT,
+                   user_refresh_token=config.TW_URT,
+                   login=config.TW_USR,
+                   id_url=config.TW_IDU,
+                   client_secret=config.TW_CLS)
     def get(self, url, params, user=False):
         """Make GET request"""
         token = self.app_access_token

@@ -4,8 +4,12 @@
 MYDLP = '/usr/bin/yt-dlp'
 BASE_URL = 'https://www.website.com/'
 
-# prioritize.py level 2 (prioritized) only
+# prioritize.py level 2 (prioritized) and level 3 (ML) only
 MAX = 5  # max concurrent jobs to keep running
+
+# prioritize.py level 3 (ML) and the stream_* tooling
+ML_DATA = './ml_data'                    # snapshots/ and scores.csv live here
+ML_MODEL = './ml_data/model.joblib'      # trained model saved/loaded here
 
 # OAuth (prioritize.py level 2 only)
 TW_URL = 'https://api.website.com/helix/'   # Helix API base
