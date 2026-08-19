@@ -186,6 +186,13 @@ Only needs `BASE_URL` in `config.py`.
 Checks the streaming site for who you follow that is **live**, then keeps the top `MAX` live
 priorities running: it adds the missing ones and stops the excess.
 
+A priority whose job is in `upload` status is not counted as running — that
+status means the worker that owned it is done downloading but may never come
+back to finish the OI upload (see "Reclaiming scratch space" above), so
+treating it as still occupying the priority would leave it stuck forever.
+Instead a fresh job is started for that priority right away; the original
+`upload` job is left alone for `cleanup.py` to actually reclaim.
+
 Needs in `config.py`:
 
 - `BASE_URL` — prefix prepended to each priority-file entry to form the job URL.

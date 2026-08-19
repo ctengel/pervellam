@@ -27,10 +27,19 @@ def prioritize(pvo, two, priorities, count=5):
     for one in add:
         print(one)
     # TODO object orientate
-    running = [(x["id"], x["url"].split('/')[-1]) for x in pvo.list_jobs()]
+    jobs = pvo.list_jobs()
+    # A job in 'upload' status is never picked back up by any worker (#45), so
+    # don't count it as occupying its priority's slot; leave its status alone
+    # for cleanup.py to actually reclaim.
+    running = [(x["id"], x["url"].split('/')[-1]) for x in jobs if x["status"] != 'upload']
     print("Running:")
     for one in running:
         print(one[1])
+    stuck = [x["url"].split('/')[-1] for x in jobs if x["status"] == 'upload']
+    if stuck:
+        print("Stuck in upload (ignored, see cleanup.py):")
+        for one in stuck:
+            print(one)
     actual_add = [x for x in add if x not in [y[1] for y in running]]
     print("Add:")
     for job in actual_add:
@@ -51,10 +60,18 @@ def prioritize(pvo, two, priorities, count=5):
                 break
 
 def pri_naieve(pvo, priorities):
-    running = [(x["id"], x["url"].split('/')[-1]) for x in pvo.list_jobs()]
+    jobs = pvo.list_jobs()
+    # See prioritize(): a job stuck in 'upload' is never resumed by a worker,
+    # so don't treat it as still occupying its priority (#45).
+    running = [(x["id"], x["url"].split('/')[-1]) for x in jobs if x["status"] != 'upload']
     print("Running:")
     for one in running:
         print(one[1])
+    stuck = [x["url"].split('/')[-1] for x in jobs if x["status"] == 'upload']
+    if stuck:
+        print("Stuck in upload (ignored, see cleanup.py):")
+        for one in stuck:
+            print(one)
     actual_add = [x for x in priorities if x not in [y[1] for y in running]]
     print('Add-options')
     for one in actual_add:
